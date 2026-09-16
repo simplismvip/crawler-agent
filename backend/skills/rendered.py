@@ -26,6 +26,16 @@ def _markdown_from_crawl4ai_result(result: Any) -> str:
     return (text or "").strip()
 
 
+def markdown_from_crawl_result(result: Any) -> tuple[str, str | None]:
+    success = getattr(result, "success", True)
+    status = getattr(result, "status_code", None)
+    error_message = str(getattr(result, "error_message", "") or "").strip()
+    if success is False or (isinstance(status, int) and status >= 400):
+        detail = error_message or (f"HTTP {status}" if isinstance(status, int) else "render failed")
+        return "", detail
+    return _markdown_from_crawl4ai_result(result), None
+
+
 def storage_state_for_render(url: str, jar: CookieJar | None = None) -> dict | None:
     return (jar or CookieJar()).storage_state_for_url(url)
 
@@ -37,7 +47,10 @@ async def _crawl4ai_fetch(url: str) -> str:
     config = BrowserConfig(storage_state=state) if state else BrowserConfig()
     async with AsyncWebCrawler(config=config) as crawler:
         result = await crawler.arun(url=url)
-    return _markdown_from_crawl4ai_result(result)
+    markdown, error = markdown_from_crawl_result(result)
+    if error:
+        raise RuntimeError(error)
+    return markdown
 
 
 async def scrape_rendered(

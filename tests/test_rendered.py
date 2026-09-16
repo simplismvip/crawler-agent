@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from backend.skills.base import SkillContext
 from backend.skills.models import ScrapePageInput
 from backend.skills.registry import SkillRegistry
-from backend.skills.rendered import RenderedSkill, scrape_rendered
+from backend.skills.rendered import RenderedSkill, markdown_from_crawl_result, scrape_rendered
 from backend.skills.search import SearchWebSkill
 
 
@@ -82,3 +82,25 @@ def test_rendered_uses_storage_state_when_configured(tmp_path, monkeypatch) -> N
     assert state is not None
     assert any(item["name"] == "z_c0" for item in state["cookies"])
     assert storage_state_for_render("https://example.com/", jar=jar) is None
+
+
+class _CrawlResult:
+    def __init__(self, *, success: bool, markdown: str = "", error_message: str = "", status_code: int | None = 200):
+        self.success = success
+        self.markdown = markdown
+        self.error_message = error_message
+        self.status_code = status_code
+
+
+def test_blocked_crawl_result_is_error_not_fake_markdown() -> None:
+    markdown, error = markdown_from_crawl_result(
+        _CrawlResult(
+            success=False,
+            markdown="![ZhiHu logo](https://static.zhihu.com/logo.png)",
+            error_message="Blocked by anti-bot protection: HTTP 403",
+            status_code=403,
+        )
+    )
+    assert markdown == ""
+    assert error
+    assert "403" in error or "Blocked" in error

@@ -235,3 +235,33 @@ async def test_scrape_page_returns_json_api_body(tmp_path: Path) -> None:
     assert "第一条回答" in result.markdown
     assert "is_end" in result.markdown
 
+
+@pytest.mark.asyncio
+async def test_scrape_page_403_with_cookies_is_not_missing_login(tmp_path: Path) -> None:
+    jar = CookieJar(root=tmp_path)
+    jar.save_storage_state(
+        "zhihu",
+        {
+            "cookies": [{"name": "z_c0", "value": "abc", "domain": ".zhihu.com", "path": "/"}],
+            "origins": [],
+        },
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, text="forbidden")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await scrape_page(
+            "https://www.zhihu.com/question/1",
+            client=client,
+            resolver=lambda *_a, **_k: [(2, 1, 6, "", ("93.184.216.34", 443))],
+            rate_limit=False,
+            cookie_jar=jar,
+        )
+    assert result.error
+    assert "403" in result.error
+    assert "不是没登录" in result.error
+    assert "tools.login" not in result.error
+    assert result.hint is None
+

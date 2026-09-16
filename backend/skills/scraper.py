@@ -221,9 +221,17 @@ async def scrape_page(
                                 current = nxt
                                 continue
                             if response.status_code >= 400:
+                                if cookie_header:
+                                    error = (
+                                        f"HTTP {response.status_code}。"
+                                        "已附带本机登录 Cookie，不是没登录。"
+                                        "站点拒绝了本次自动化请求（风控）。"
+                                    )
+                                else:
+                                    error = f"HTTP {response.status_code}"
                                 return ScrapePageOutput(
                                     url=str(response.url),
-                                    error=f"HTTP {response.status_code}",
+                                    error=error,
                                 )
                             raw = await _read_limited(response)
                             html = raw.decode(response.encoding or "utf-8", errors="replace")

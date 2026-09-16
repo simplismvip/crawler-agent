@@ -64,6 +64,7 @@ def test_system_prompt_includes_hint_rule_and_enabled_routing() -> None:
     assert "collect_dataset" in prompt
     assert "截断" in prompt
     assert "不限网站" in prompt
+    assert "不是没登录" in prompt
     collect = next(
         item for item in default_registry.openai_tools() if item["function"]["name"] == "collect_dataset"
     )

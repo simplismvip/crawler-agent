@@ -324,7 +324,7 @@ async def _collect_pages(
         if status >= 400:
             return CollectDatasetOutput(
                 url=url,
-                error=f"HTTP {status}。这不是缺 Cookie，不要向用户索要 Cookie。",
+                error=f"HTTP {status}。已附带本机登录 Cookie，不是没登录。站点拒绝了本次自动化请求（风控）。这不是缺 Cookie，不要向用户索要 Cookie。",
             )
 
         try:
