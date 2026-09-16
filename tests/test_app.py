@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from backend.agent.schema import DoneEvent, TokenEvent
 from backend.app import app
+from backend.store import ConversationStore
 from fastapi.testclient import TestClient
+
+
+def _isolate_store(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("backend.app.store", ConversationStore(tmp_path / "agent.db"))
 
 
 def test_health() -> None:
@@ -10,7 +15,9 @@ def test_health() -> None:
         assert client.get("/api/health").json() == {"status": "ok"}
 
 
-def test_chat_sse_events(monkeypatch) -> None:
+def test_chat_sse_events(monkeypatch, tmp_path) -> None:
+    _isolate_store(monkeypatch, tmp_path)
+
     async def fake_run(*_args, **_kwargs):
         yield TokenEvent(request_id="x", text="hi")
         yield DoneEvent(request_id="x", status="complete")
@@ -25,7 +32,9 @@ def test_chat_sse_events(monkeypatch) -> None:
     assert "event: done" in body
 
 
-def test_chat_sse_waits_past_one_second(monkeypatch) -> None:
+def test_chat_sse_waits_past_one_second(monkeypatch, tmp_path) -> None:
+    _isolate_store(monkeypatch, tmp_path)
+
     async def slow_run(*_args, **_kwargs):
         import asyncio
 
@@ -39,4 +48,3 @@ def test_chat_sse_waits_past_one_second(monkeypatch) -> None:
             body = "".join(response.iter_text())
     assert "event: token" in body
     assert '"status":"complete"' in body or '"status": "complete"' in body
-

@@ -1,17 +1,18 @@
-# Crawler Agent V1.1
+# Crawler Agent
 
 公开网页检索 Agent：原生 OpenAI function calling、两个工具（`search_web` / `scrape_page`）、CLI 与 Web 共用事件流。
 
 Python 3.12，环境在 `.venv`（由 uv 创建）。
 
-## 当前默认（先用着）
-
-V1 初稿写的是 Tavily → DuckDuckGo、模型 `gpt-4o-mini`。**现阶段先固定下面两套，不做产品级切换 UI**；后期再提供可配置的搜索后端与其他大模型（仍走 OpenAI 兼容接口）。
+## 当前默认
 
 | 项 | 当前 | 后期 |
 | --- | --- | --- |
 | 搜索 | 树莓派 SearXNG：`SEARXNG_BASE_URL=http://100.120.153.107:8888`（Tailscale）。未配时才 Tavily / DuckDuckGo | 可切换 SearXNG / Tavily / DuckDuckGo 等 |
-| 模型 | MiniMax-M3（`MINIMAX_API_KEY` + `https://api.minimax.cn/v1`） | 可换其他兼容网关与模型名 |
+| 模型 | 默认 MiniMax-M3；Web 顶栏可切换 MiniMax M 系列（同一兼容网关） | 其他厂商网关 |
+| Web | Gemini 浅色对话壳：侧边栏历史、胶囊输入、SQLite 落库 | 多用户 / 登录 |
+
+会话存在本机 `data/crawler-agent.db`（可用 `SQLITE_PATH` 覆盖）。
 
 ## 安装
 
@@ -57,4 +58,4 @@ Web：另开终端 `cd frontend && npm run dev`，打开 http://localhost:3000 �
 
 ## 范围
 
-V1.1 不做会话持久化、并行工具执行、Crawl4AI、登录墙。抓页默认 `httpx + trafilatura`，列表页回退 `markdownify`，Playwright 仅作末档且默认不安装。
+不做并行工具执行、Crawl4AI、登录墙、多用户。抓页默认 `httpx + trafilatura`，列表页回退 `markdownify`，Playwright 仅作末档且默认不安装。

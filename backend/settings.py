@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parent.parent
 
 load_dotenv()
 
@@ -29,6 +32,7 @@ class Settings:
     api_token: str
     host: str
     port: int
+    sqlite_path: Path
 
     @property
     def is_minimax(self) -> bool:
@@ -49,6 +53,7 @@ class Settings:
             api_token=os.getenv("API_TOKEN", ""),
             host=os.getenv("HOST", "127.0.0.1"),
             port=int(os.getenv("PORT", "8000")),
+            sqlite_path=Path(os.getenv("SQLITE_PATH") or ROOT / "data" / "crawler-agent.db"),
         )
 
 

@@ -1,5 +1,24 @@
 export type SseHandler = (eventName: string, data: Record<string, unknown>) => void;
 
+function parseBlock(block: string): { eventName: string; data: Record<string, unknown> } | null {
+  let eventName = "message";
+  const dataLines: string[] = [];
+  for (const line of block.split("\n")) {
+    if (line.startsWith("event:")) {
+      eventName = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trim());
+    }
+  }
+  if (!dataLines.length) return null;
+  const raw = dataLines.join("\n");
+  try {
+    return { eventName, data: JSON.parse(raw) as Record<string, unknown> };
+  } catch {
+    return { eventName, data: { raw } };
+  }
+}
+
 export async function readSse(
   response: Response,
   onEvent: SseHandler,
@@ -26,21 +45,13 @@ export async function readSse(
       buffer = parts.pop() ?? "";
       for (const block of parts) {
         if (!block.trim()) continue;
-        let eventName = "message";
-        const dataLines: string[] = [];
-        for (const line of block.split("\n")) {
-          if (line.startsWith("event:")) {
-            eventName = line.slice(6).trim();
-          } else if (line.startsWith("data:")) {
-            dataLines.push(line.slice(5).trim());
-          }
-        }
-        if (!dataLines.length) continue;
-        const raw = dataLines.join("\n");
-        try {
-          onEvent(eventName, JSON.parse(raw) as Record<string, unknown>);
-        } catch {
-          onEvent(eventName, { raw });
+        const parsed = parseBlock(block);
+        if (!parsed) continue;
+        onEvent(parsed.eventName, parsed.data);
+        if (parsed.eventName === "token") {
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => resolve());
+          });
         }
       }
     }

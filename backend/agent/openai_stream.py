@@ -10,11 +10,12 @@ from backend.settings import settings
 
 
 class OpenAIStreamer:
-    def __init__(self, client: AsyncOpenAI | None = None) -> None:
+    def __init__(self, client: AsyncOpenAI | None = None, model: str | None = None) -> None:
         self.client = client or AsyncOpenAI(
             api_key=settings.openai_api_key or "missing",
             base_url=settings.openai_base_url,
         )
+        self.model = model or settings.openai_model
 
     async def stream(
         self,
@@ -24,7 +25,7 @@ class OpenAIStreamer:
         tool_choice: str = "auto",
     ) -> AsyncIterator[StreamPart]:
         kwargs: dict[str, Any] = {
-            "model": settings.openai_model,
+            "model": self.model,
             "messages": messages,
             "stream": True,
         }

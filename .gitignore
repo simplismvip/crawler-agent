@@ -6,8 +6,12 @@ __pycache__/
 *.pyc
 .DS_Store
 .next/
+node_modules/
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo
 .coverage
 htmlcov/
+data/

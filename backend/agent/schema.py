@@ -44,8 +44,24 @@ class DoneEvent(BaseModel):
     status: Literal["complete", "error"]
 
 
+class ConversationEvent(BaseModel):
+    event: Literal["conversation"] = "conversation"
+    request_id: str
+    conversation_id: str
+    title: str
+    model: str
+
+
 AgentEvent = Annotated[
-    Union[PingEvent, TokenEvent, ToolStartEvent, ToolEndEvent, ErrorEvent, DoneEvent],
+    Union[
+        PingEvent,
+        TokenEvent,
+        ToolStartEvent,
+        ToolEndEvent,
+        ErrorEvent,
+        DoneEvent,
+        ConversationEvent,
+    ],
     Field(discriminator="event"),
 ]
 
@@ -53,6 +69,8 @@ AgentEvent = Annotated[
 class ChatRequest(BaseModel):
     message: str
     history: list[dict[str, Any]] = Field(default_factory=list)
+    conversation_id: str | None = None
+    model: str | None = None
 
 
 class HistoryTurn(BaseModel):

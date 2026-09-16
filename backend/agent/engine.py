@@ -149,9 +149,10 @@ async def run_agent(
     tool_runner: ToolRunner | None = None,
     max_llm_rounds: int = 8,
     max_tool_calls: int = 4,
+    model: str | None = None,
 ) -> AsyncIterator[AgentEvent]:
     request_id = request_id or uuid.uuid4().hex
-    llm = llm or OpenAIStreamer()
+    llm = llm or OpenAIStreamer(model=model)
     tool_runner = tool_runner or default_tool_runner
     tools = openai_tools()
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]

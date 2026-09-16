@@ -202,7 +202,11 @@ async def scrape_page(
     markdown, truncated = apply_length_limit(markdown)
     title = _page_title(html)
     if not markdown:
-        return ScrapePageOutput(url=final_url, title=title, error="empty content")
+        return ScrapePageOutput(
+            url=final_url,
+            title=title,
+            error="empty content: 页面几乎没有可读正文。常见原因是需要登录、内容由脚本渲染，或站点拦截了抓取。当前版本不支持登录态抓取。",
+        )
     return ScrapePageOutput(url=final_url, title=title, markdown=markdown, truncated=truncated)
 
 

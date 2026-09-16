@@ -2,6 +2,170 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --gm-bg: #ffffff;
+  --gm-sidebar: #f0f4f9;
+  --gm-hover: #e9eef6;
+  --gm-active: #d3e3fd;
+  --gm-ink: #1f1f1f;
+  --gm-mute: #444746;
+  --gm-faint: #747775;
+  --gm-line: #d3d3d3;
+  --gm-blue: #0b57d0;
+  --gm-chip: #f0f4f9;
+}
+
+html,
 body {
-  @apply min-h-screen bg-zinc-50 text-zinc-900 antialiased;
+  height: 100%;
+}
+
+body {
+  @apply antialiased;
+  background: var(--gm-bg);
+  color: var(--gm-ink);
+}
+
+.gm-gradient-text {
+  background: linear-gradient(90deg, #4285f4 0%, #9b72cb 45%, #d96570 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.gm-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.gm-scrollbar::-webkit-scrollbar-thumb {
+  background: #c4c7c5;
+  border-radius: 8px;
+}
+
+.gm-caret::after {
+  content: "▍";
+  animation: gm-blink 1s step-end infinite;
+  margin-left: 2px;
+  color: #5f6368;
+}
+
+@keyframes gm-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.gm-sparkle-busy {
+  animation: gm-sparkle-spin 1.15s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes gm-sparkle-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.md-body {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--gm-ink);
+}
+
+.md-body > :first-child {
+  margin-top: 0;
+}
+
+.md-body h1,
+.md-body h2,
+.md-body h3 {
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 1.1em 0 0.45em;
+}
+
+.md-body h1 {
+  font-size: 1.45rem;
+}
+
+.md-body h2 {
+  font-size: 1.22rem;
+}
+
+.md-body h3 {
+  font-size: 1.08rem;
+}
+
+.md-body p {
+  margin: 0.55em 0;
+}
+
+.md-body ul,
+.md-body ol {
+  margin: 0.55em 0;
+  padding-left: 1.4em;
+}
+
+.md-body ul {
+  list-style: disc;
+}
+
+.md-body ol {
+  list-style: decimal;
+}
+
+.md-body li {
+  margin: 0.2em 0;
+}
+
+.md-body a {
+  color: var(--gm-blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md-body code {
+  font-size: 0.88em;
+  background: #f1f3f4;
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+.md-body pre {
+  overflow-x: auto;
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0.8em 0;
+}
+
+.md-body pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.md-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 0.92em;
+}
+
+.md-body th,
+.md-body td {
+  border: 1px solid #e3e3e3;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.md-body th {
+  background: #f8f9fa;
+  font-weight: 600;
+}
+
+.md-body blockquote {
+  margin: 0.7em 0;
+  padding-left: 12px;
+  border-left: 3px solid #dadce0;
+  color: var(--gm-mute);
 }
