@@ -77,3 +77,47 @@ async def test_download_media_rejects_loopback() -> None:
 
     result = await download_media("http://127.0.0.1/video", backend=backend)
     assert result.error
+
+
+def test_yt_dlp_opts_use_netscape_cookiefile(tmp_path: Path) -> None:
+    from backend.skills.cookies import CookieJar
+
+    jar = CookieJar(root=tmp_path)
+    jar.save_storage_state(
+        "bili",
+        {
+            "cookies": [
+                {"name": "DedeUserID", "value": "1", "domain": ".bilibili.com", "path": "/"},
+                {"name": "SESSDATA", "value": "s", "domain": ".bilibili.com", "path": "/"},
+            ],
+            "origins": [],
+        },
+    )
+    opts = _yt_dlp_opts(
+        audio_only=False,
+        info_only=True,
+        dest_dir=None,
+        cookiefile=jar.netscape_path("bili"),
+    )
+    assert opts["cookiefile"] == str(jar.netscape_path("bili"))
+    assert "cookiesfrombrowser" not in opts
+
+    mixed = _yt_dlp_opts(
+        audio_only=False,
+        info_only=True,
+        dest_dir=None,
+        cookiefile=jar.netscape_path("bili"),
+        cookies_from_browser="chrome",
+    )
+    assert mixed["cookiefile"] == str(jar.netscape_path("bili"))
+    assert "cookiesfrombrowser" not in mixed
+
+    browser_only = _yt_dlp_opts(
+        audio_only=False,
+        info_only=True,
+        dest_dir=None,
+        cookies_from_browser="chrome",
+    )
+    assert "cookiefile" not in browser_only
+    assert browser_only["cookiesfrombrowser"] == ("chrome",)
+

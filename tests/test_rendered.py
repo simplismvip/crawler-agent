@@ -66,3 +66,19 @@ async def test_scrape_rendered_rejects_loopback() -> None:
     result = await scrape_rendered("http://127.0.0.1/secret", crawler=crawler)
     assert result.error
     assert "not allowed" in result.error or "ip" in result.error
+
+
+def test_rendered_uses_storage_state_when_configured(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("COOKIES_DIR", str(tmp_path))
+    from backend.skills.cookies import CookieJar
+    from backend.skills.rendered import storage_state_for_render
+
+    jar = CookieJar(root=tmp_path)
+    jar.save_storage_state(
+        "zhihu",
+        {"cookies": [{"name": "z_c0", "value": "tok", "domain": ".zhihu.com", "path": "/"}], "origins": []},
+    )
+    state = storage_state_for_render("https://www.zhihu.com/question/1", jar=jar)
+    assert state is not None
+    assert any(item["name"] == "z_c0" for item in state["cookies"])
+    assert storage_state_for_render("https://example.com/", jar=jar) is None

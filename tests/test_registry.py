@@ -24,6 +24,7 @@ class _DisabledSkill:
 def test_default_registry_always_includes_search_and_scrape() -> None:
     names = [item["function"]["name"] for item in default_registry.openai_tools()]
     assert names[0:2] == ["search_web", "scrape_page"]
+    assert "collect_dataset" in names
     for extra in ("scrape_rendered", "download_media", "download_gallery"):
         if default_registry.get(extra):
             assert extra in names
@@ -55,6 +56,22 @@ def test_system_prompt_includes_hint_rule_and_enabled_routing() -> None:
     assert "严禁把 hint" in prompt or "禁止把 hint" in prompt
     assert "search_web" in prompt
     assert "scrape_page" in prompt
+    assert "tools.login" in prompt
+    assert "zhihu=" in prompt
+    assert "自动" in prompt
+    assert "禁止" in prompt
+    assert "curl" in prompt
+    assert "collect_dataset" in prompt
+    assert "截断" in prompt
+    assert "不限网站" in prompt
+    collect = next(
+        item for item in default_registry.openai_tools() if item["function"]["name"] == "collect_dataset"
+    )
+    assert "any site" in collect["function"]["description"].lower()
+    scrape = next(
+        item for item in default_registry.openai_tools() if item["function"]["name"] == "scrape_page"
+    )
+    assert "Cookie" in scrape["function"]["description"] or "cookie" in scrape["function"]["description"].lower() or "登录" in scrape["function"]["description"]
     if default_registry.get("scrape_rendered"):
         assert "scrape_rendered" in prompt
     if default_registry.get("download_media"):
@@ -69,6 +86,7 @@ def test_skill_infos_include_install_hints_for_extras() -> None:
     assert names == [
         "search_web",
         "scrape_page",
+        "collect_dataset",
         "scrape_rendered",
         "download_media",
         "download_gallery",

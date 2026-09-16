@@ -20,6 +20,7 @@ from backend.agent.schema import (
 )
 from backend.skills.base import SkillContext
 from backend.skills.registry import SkillErrorOutput, default_registry, openai_tools
+from backend.skills.scraper import truncation_task_warning
 
 PREVIEW_LIMIT = 800
 LLM_MARKDOWN_LIMIT = 9000
@@ -57,9 +58,20 @@ def _preview_from_output(output: BaseModel) -> tuple[str, str | None]:
         title = data.get("title") or data.get("url") or ""
         preview = f"{title} · {len(files)} 个文件"
         return preview[:PREVIEW_LIMIT], None
+    path = data.get("path")
+    count = data.get("count")
+    if isinstance(path, str) and path and isinstance(count, int):
+        preview = f"已保存 {count} 条 · json\n{path}"
+        return preview[:PREVIEW_LIMIT], None
+    warning = data.get("warning")
     markdown = data.get("markdown")
     if isinstance(markdown, str) and markdown:
-        return markdown[:PREVIEW_LIMIT], None
+        preview = markdown
+        if isinstance(warning, str) and warning:
+            preview = f"{warning}\n{markdown}"
+        return preview[:PREVIEW_LIMIT], None
+    if isinstance(warning, str) and warning:
+        return warning[:PREVIEW_LIMIT], None
     dumped = json.dumps(data, ensure_ascii=False)
     return dumped[:PREVIEW_LIMIT], None
 
@@ -70,6 +82,8 @@ def _content_for_llm(output: BaseModel) -> str:
     if isinstance(markdown, str) and len(markdown) > LLM_MARKDOWN_LIMIT:
         data["markdown"] = markdown[:LLM_MARKDOWN_LIMIT]
         data["truncated"] = True
+        if not data.get("warning"):
+            data["warning"] = truncation_task_warning(True)
     return json.dumps(data, ensure_ascii=False)
 
 

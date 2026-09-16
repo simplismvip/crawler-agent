@@ -79,7 +79,7 @@ export function InputBar({
         )}
       </div>
       <p className="mt-2 text-center text-[11px] text-[var(--gm-faint)]">
-        只抓取公开网页。需要登录的站点（如小红书）当前抓不到正文。
+        登录站点请先本机运行 python -m tools.login --platform zhihu（或 xhs / bili）。不要把 Cookie 贴进对话框。
       </p>
     </form>
   );

@@ -33,6 +33,8 @@ class Settings:
     host: str
     port: int
     sqlite_path: Path
+    cookies_dir: Path
+    cookies_from_browser: str
 
     @property
     def is_minimax(self) -> bool:
@@ -54,6 +56,8 @@ class Settings:
             host=os.getenv("HOST", "127.0.0.1"),
             port=int(os.getenv("PORT", "8000")),
             sqlite_path=Path(os.getenv("SQLITE_PATH") or ROOT / "data" / "crawler-agent.db"),
+            cookies_dir=Path(os.getenv("COOKIES_DIR") or os.getenv("SOCIAL_COOKIES_DIR") or ROOT / "data" / "cookies"),
+            cookies_from_browser=(os.getenv("COOKIES_FROM_BROWSER") or "").strip(),
         )
 
 

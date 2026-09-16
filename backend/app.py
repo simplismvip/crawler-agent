@@ -120,6 +120,13 @@ async def list_skills() -> dict[str, Any]:
     return {"skills": [item.model_dump() for item in default_registry.skill_infos()]}
 
 
+@app.get("/api/cookies")
+async def list_cookies() -> dict[str, Any]:
+    from backend.skills.cookies import CookieJar
+
+    return {"platforms": CookieJar().configured_platforms()}
+
+
 @app.get("/api/conversations")
 async def list_conversations(request: Request, q: str | None = None) -> dict[str, Any]:
     _authorize(request)

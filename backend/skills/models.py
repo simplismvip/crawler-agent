@@ -29,6 +29,7 @@ class ScrapePageOutput(BaseModel):
     title: str = ""
     markdown: str = ""
     truncated: bool = False
+    warning: str | None = None
     error: str | None = None
     hint: str | None = None
 
@@ -42,6 +43,7 @@ class ScrapeRenderedOutput(BaseModel):
     title: str = ""
     markdown: str = ""
     truncated: bool = False
+    warning: str | None = None
     error: str | None = None
     hint: str | None = None
 
@@ -92,6 +94,24 @@ class ScrapeSocialOutput(BaseModel):
     url: str
     platform: str = ""
     markdown: str = ""
+    truncated: bool = False
+    warning: str | None = None
+    error: str | None = None
+    hint: str | None = None
+
+
+class CollectDatasetInput(BaseModel):
+    url: str
+    fields: list[str] = Field(min_length=1)
+    max_items: int = Field(default=50, ge=1, le=200)
+    format: str = "json"
+
+
+class CollectDatasetOutput(BaseModel):
+    url: str
+    path: str = ""
+    count: int = 0
+    fields: list[str] = Field(default_factory=list)
     truncated: bool = False
     error: str | None = None
     hint: str | None = None

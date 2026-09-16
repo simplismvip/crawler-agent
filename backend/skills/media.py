@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,8 @@ def _yt_dlp_opts(
     audio_only: bool,
     info_only: bool,
     dest_dir: Path | None,
+    cookiefile: Path | None = None,
+    cookies_from_browser: str | None = None,
 ) -> dict[str, Any]:
     opts: dict[str, Any] = {
         "quiet": True,
@@ -88,7 +91,21 @@ def _yt_dlp_opts(
         dest_dir.mkdir(parents=True, exist_ok=True)
         opts["outtmpl"] = str(dest_dir / "%(title).80s.%(ext)s")
         opts["max_filesize"] = MAX_MEDIA_BYTES
+    if cookiefile is not None and Path(cookiefile).is_file():
+        opts["cookiefile"] = str(cookiefile)
+    elif cookies_from_browser:
+        opts["cookiesfrombrowser"] = (cookies_from_browser,)
     return opts
+
+
+def _session_for_url(url: str) -> tuple[Path | None, str | None]:
+    from backend.skills.cookies import CookieJar
+
+    cookiefile = CookieJar().netscape_for_url(url)
+    if cookiefile is not None:
+        return cookiefile, None
+    browser = (os.getenv("COOKIES_FROM_BROWSER") or "").strip()
+    return None, browser or None
 
 
 def _collect_downloaded_files(
@@ -140,7 +157,14 @@ async def _yt_dlp_backend(
 ) -> DownloadMediaOutput:
     import yt_dlp
 
-    opts = _yt_dlp_opts(audio_only=audio_only, info_only=info_only, dest_dir=dest_dir)
+    cookiefile, from_browser = _session_for_url(url)
+    opts = _yt_dlp_opts(
+        audio_only=audio_only,
+        info_only=info_only,
+        dest_dir=dest_dir,
+        cookiefile=cookiefile,
+        cookies_from_browser=from_browser,
+    )
 
     def _extract() -> DownloadMediaOutput:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -186,6 +210,7 @@ class MediaSkill:
         "若刚才 info_only=true 且 files 为空、用户其实要文件，下一步立刻再调且 info_only=false。"
         "历史里出现 Connection error 或「下载失败」时，用户再说下载/重新下载，仍必须立刻 download_media 且 info_only=false，禁止只复述旧错误。"
         "禁止建议 you-get、唧唧Down、浏览器插件或让用户自己跑 yt-dlp。"
+        "若下载因登录墙失败，告知用户 python -m tools.login --platform bili 或放入 Cookie 文件，不要建议给日常 Chrome 开远程调试。"
     )
 
     def available(self) -> bool:

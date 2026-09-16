@@ -22,7 +22,7 @@ export function EmptyState({ onPick }: { onPick: (text: string) => void }) {
     <div className="flex h-full flex-col items-center justify-center px-4 pb-32">
       <Sparkle className="h-14 w-14" />
       <h1 className="gm-gradient-text mt-5 text-[3.25rem] font-medium leading-none tracking-tight">你好</h1>
-      <p className="mt-4 text-[15px] text-[var(--gm-mute)]">需要我帮你搜索或抓取哪个公开网页？</p>
+      <p className="mt-4 text-[15px] text-[var(--gm-mute)]">需要我帮你搜索或抓取哪个网页？</p>
       <div className="mt-10 grid w-full max-w-3xl gap-3 sm:grid-cols-3">
         {SUGGESTIONS.map((item) => (
           <button

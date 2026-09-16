@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from backend.agent.prompt import SYSTEM_PROMPT_HEADER
 from backend.skills.base import SkillContext
+from backend.skills.collect import CollectSkill
 from backend.skills.gallery import GallerySkill
 from backend.skills.media import MediaSkill
 from backend.skills.models import SkillInfo
@@ -28,6 +29,7 @@ def builtin_skills() -> list[Any]:
     return [
         SearchWebSkill(),
         ScrapePageSkill(),
+        CollectSkill(),
         RenderedSkill(),
         MediaSkill(),
         GallerySkill(),
@@ -69,7 +71,9 @@ class SkillRegistry:
         return tools
 
     def build_system_prompt(self) -> str:
-        parts = [SYSTEM_PROMPT_HEADER.strip()]
+        from backend.skills.cookies import session_status_line
+
+        parts = [SYSTEM_PROMPT_HEADER.strip(), session_status_line()]
         for skill in self.enabled():
             routing = getattr(skill, "routing", "") or ""
             if routing.strip():

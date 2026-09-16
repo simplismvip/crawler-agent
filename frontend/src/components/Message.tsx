@@ -4,7 +4,7 @@ import type { Components } from "react-markdown";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, ChevronDown, Copy, Film, Globe, Images, Link2, Monitor, Share2, Wrench } from "lucide-react";
+import { Check, ChevronDown, Copy, FileJson, Film, Globe, Images, Link2, Monitor, Share2, Wrench } from "lucide-react";
 import { Sparkle } from "@/components/Sparkle";
 import type { ToolCard } from "@/lib/api";
 
@@ -47,6 +47,7 @@ const markdownComponents: Components = {
 const TOOL_UI: Record<string, { icon: typeof Globe; running: string; done: string }> = {
   search_web: { icon: Globe, running: "正在搜索网页", done: "已搜索网页" },
   scrape_page: { icon: Link2, running: "正在抓取页面", done: "已抓取页面" },
+  collect_dataset: { icon: FileJson, running: "正在保存数据集", done: "已保存数据集" },
   scrape_rendered: { icon: Monitor, running: "正在渲染页面", done: "已渲染页面" },
   download_media: { icon: Film, running: "正在提取媒体", done: "已提取媒体" },
   download_gallery: { icon: Images, running: "正在下载图集", done: "已下载图集" },

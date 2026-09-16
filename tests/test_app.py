@@ -15,6 +15,22 @@ def test_health() -> None:
         assert client.get("/api/health").json() == {"status": "ok"}
 
 
+def test_cookies_status_has_no_secret_values(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("COOKIES_DIR", str(tmp_path))
+    from backend.skills.cookies import CookieJar
+
+    CookieJar(root=tmp_path).save_storage_state(
+        "zhihu",
+        {"cookies": [{"name": "z_c0", "value": "SUPER_SECRET", "domain": ".zhihu.com", "path": "/"}], "origins": []},
+    )
+    with TestClient(app) as client:
+        payload = client.get("/api/cookies").json()
+    blob = str(payload)
+    assert "SUPER_SECRET" not in blob
+    zhihu = next(item for item in payload["platforms"] if item["platform"] == "zhihu")
+    assert zhihu["configured"] is True
+
+
 def test_list_skills_includes_unavailable_extras() -> None:
     with TestClient(app) as client:
         payload = client.get("/api/skills").json()

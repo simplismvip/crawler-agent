@@ -38,8 +38,9 @@ async def download_gallery(
 
     clamped = clamp_max_items(max_items)
     worker = backend or _gallery_dl_backend
+    cookiefile = _cookiefile_for_url(url)
     try:
-        result = await worker(url, max_items=clamped, dest_dir=dest_dir)
+        result = await worker(url, max_items=clamped, dest_dir=dest_dir, cookiefile=cookiefile)
     except Exception as exc:
         return DownloadGalleryOutput(url=url, error=str(exc))
     if len(result.files) > clamped:
@@ -48,18 +49,28 @@ async def download_gallery(
     return result
 
 
+def _cookiefile_for_url(url: str) -> Path | None:
+    from backend.skills.cookies import CookieJar
+
+    return CookieJar().netscape_for_url(url)
+
+
 async def _gallery_dl_backend(
     url: str,
     *,
     max_items: int,
     dest_dir: Path | None,
+    cookiefile: Path | None = None,
 ) -> DownloadGalleryOutput:
     import gallery_dl
 
     dest = dest_dir or Path(".")
     dest.mkdir(parents=True, exist_ok=True)
     job = gallery_dl.job.DownloadJob(url)
-    job.extractor.config = {**(getattr(job.extractor, "config", None) or {}), "directory": [str(dest)]}
+    extra = {"directory": [str(dest)]}
+    if cookiefile is not None and Path(cookiefile).is_file():
+        extra["cookies"] = str(cookiefile)
+    job.extractor.config = {**(getattr(job.extractor, "config", None) or {}), **extra}
     files: list[MediaFile] = []
 
     def _run() -> DownloadGalleryOutput:

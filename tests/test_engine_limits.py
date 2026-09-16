@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 from pydantic import BaseModel
@@ -170,6 +171,28 @@ def test_preview_omits_hint_but_llm_payload_keeps_it() -> None:
     assert "scrape_rendered" not in preview
     payload = _content_for_llm(output)
     assert "scrape_rendered" in payload
+
+
+def test_content_for_llm_adds_generic_truncation_warning() -> None:
+    output = ScrapePageOutput(url="https://example.com/long", markdown="x" * 10_000)
+    payload = json.loads(_content_for_llm(output))
+    assert payload["truncated"] is True
+    assert "collect_dataset" in payload["warning"]
+    assert "不限网站" in payload["warning"]
+    assert "zhihu" not in payload["warning"].lower()
+
+
+def test_preview_prepends_truncation_warning() -> None:
+    output = ScrapePageOutput(
+        url="https://example.com/long",
+        markdown="visible body",
+        truncated=True,
+        warning="内容过长，贴进聊天会被截断，任务会失败。请改用 collect_dataset 保存到本地 JSON，或只摘要前 N 条。此提醒针对任务体量，不限网站。",
+    )
+    preview, error = _preview_from_output(output)
+    assert error is None
+    assert preview.startswith("内容过长")
+    assert "collect_dataset" in preview
 
 
 def test_fatal_llm_message_maps_connection_error() -> None:

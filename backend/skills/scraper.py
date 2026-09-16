@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import time
 from collections.abc import Callable
 from html.parser import HTMLParser
@@ -13,6 +14,7 @@ from bs4 import BeautifulSoup
 from markdownify import markdownify as to_markdown
 
 from backend.skills.base import SkillContext
+from backend.skills.cookies import CookieJar, LOGIN_ERROR, detect_login_wall
 from backend.skills.http_fetch import pinned_getaddrinfo
 from backend.skills.models import ScrapePageInput, ScrapePageOutput
 from backend.skills.safety import (
@@ -59,6 +61,16 @@ def apply_length_limit(text: str, limit: int = CHAR_LIMIT) -> tuple[str, bool]:
     return text[:limit], True
 
 
+def truncation_task_warning(truncated: bool) -> str | None:
+    if not truncated:
+        return None
+    return (
+        "内容过长，贴进聊天会被截断，任务会失败。"
+        "请改用 collect_dataset 保存到本地 JSON，或只摘要前 N 条。"
+        "此提醒针对任务体量，不限网站。"
+    )
+
+
 def _page_title(html: str) -> str:
     parser = _TitleParser()
     try:
@@ -75,6 +87,21 @@ def _markdownify_body(html: str) -> str:
     body = soup.body or soup
     markdown = to_markdown(str(body), heading_style="ATX", strip=["script", "style"])
     return (markdown or "").strip()
+
+
+def json_body_to_markdown(body: str, content_type: str = "") -> str | None:
+    ctype = (content_type or "").lower()
+    stripped = (body or "").lstrip()
+    looks_json = "application/json" in ctype or stripped.startswith("{") or stripped.startswith("[")
+    if not looks_json:
+        return None
+    try:
+        parsed = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, (dict, list)):
+        return None
+    return json.dumps(parsed, ensure_ascii=False, indent=2)
 
 
 def html_to_markdown(html: str) -> tuple[str, str]:
@@ -137,6 +164,7 @@ async def scrape_page(
     resolver: Callable[..., Any] | None = None,
     rate_limit: bool = True,
     empty_hint: str | None = None,
+    cookie_jar: CookieJar | None = None,
 ) -> ScrapePageOutput:
     try:
         kwargs = {} if resolver is None else {"resolver": resolver}
@@ -145,6 +173,7 @@ async def scrape_page(
         return ScrapePageOutput(url=url, error=str(exc))
 
     owns_client = client is None
+    jar = cookie_jar if cookie_jar is not None else CookieJar()
     if client is None:
         client = httpx.AsyncClient(
             follow_redirects=False,
@@ -155,6 +184,7 @@ async def scrape_page(
     current = url
     html = ""
     final_url = url
+    content_type = ""
     try:
         for _ in range(MAX_REDIRECTS + 1):
             if cancel_event is not None and cancel_event.is_set():
@@ -170,9 +200,15 @@ async def scrape_page(
             try:
                 pin_lock = _pin_lock if owns_client else contextlib.nullcontext()
                 pin_dns = pinned_getaddrinfo(target) if owns_client else contextlib.nullcontext()
+                extra_headers = {}
+                cookie_header = jar.cookie_header(current)
+                if cookie_header:
+                    extra_headers["Cookie"] = cookie_header
+                if "/api/" in (urlparse(current).path or ""):
+                    extra_headers["Accept"] = "application/json"
                 async with pin_lock:
                     with pin_dns:
-                        async with client.stream("GET", current) as response:
+                        async with client.stream("GET", current, headers=extra_headers) as response:
                             if response.is_redirect:
                                 location = response.headers.get("location")
                                 if not location:
@@ -192,6 +228,7 @@ async def scrape_page(
                             raw = await _read_limited(response)
                             html = raw.decode(response.encoding or "utf-8", errors="replace")
                             final_url = str(response.url)
+                            content_type = response.headers.get("content-type", "")
                             break
             except httpx.TimeoutException:
                 return ScrapePageOutput(url=current, error="timeout")
@@ -203,27 +240,55 @@ async def scrape_page(
         if owns_client:
             await client.aclose()
 
+    json_markdown = json_body_to_markdown(html, content_type)
+    if json_markdown:
+        markdown, truncated = apply_length_limit(json_markdown)
+        return ScrapePageOutput(
+            url=final_url,
+            markdown=markdown,
+            truncated=truncated,
+            warning=truncation_task_warning(truncated),
+        )
+
+    title = _page_title(html)
+    if detect_login_wall(url=final_url, title=title, html=html):
+        return ScrapePageOutput(url=final_url, title=title, error=LOGIN_ERROR)
     markdown, _method = html_to_markdown(html)
 
     markdown, truncated = apply_length_limit(markdown)
-    title = _page_title(html)
     if not markdown:
         hint = empty_hint if empty_hint is not None else _rendered_hint()
         return ScrapePageOutput(
             url=final_url,
             title=title,
-            error="empty content: 页面几乎没有可读正文。常见原因是需要登录、内容由脚本渲染，或站点拦截了抓取。当前版本不支持登录态抓取。",
+            error="empty content: 页面几乎没有可读正文。常见原因是内容由脚本渲染，或站点拦截了抓取。",
             hint=hint,
         )
-    return ScrapePageOutput(url=final_url, title=title, markdown=markdown, truncated=truncated)
+    return ScrapePageOutput(
+        url=final_url,
+        title=title,
+        markdown=markdown,
+        truncated=truncated,
+        warning=truncation_task_warning(truncated),
+    )
 
 
 class ScrapePageSkill:
     name = "scrape_page"
-    description = "Fetch a public http(s) page and extract main content as Markdown. Use this for ordinary articles, docs, and list pages. Do not use it first for video download or image galleries."
+    description = (
+        "Fetch an http(s) page or JSON API and extract Markdown. "
+        "If this host has a saved login session, cookies are attached automatically. "
+        "Do not ask the user for Cookie strings. Ordinary articles, docs, list pages, and /api/ JSON. "
+        "Do not use it first for video download or image galleries."
+    )
     input_model = ScrapePageInput
     extras = None
-    routing = "普通公开网页用 scrape_page。不要未试静态抓取就改用渲染类工具。"
+    routing = (
+        "普通网页和站点 JSON API（路径含 /api/）用 scrape_page。"
+        "登录态由工具自动附加，不要让用户贴 Cookie 或自己 curl。"
+        "若工具报需要登录，告知用户运行 python -m tools.login --platform …，不要改调 scrape_rendered 去撞登录页。"
+        "若 truncated 或 warning 非空：提醒聊天装不下，改用 collect_dataset 或只摘要；不限网站。"
+    )
 
     def available(self) -> bool:
         return True

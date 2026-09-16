@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from backend.skills.gallery import clamp_max_items, download_gallery
@@ -35,3 +37,37 @@ async def test_download_gallery_clamps_backend_files() -> None:
     )
     assert len(result.files) == 30
     assert result.truncated is True
+
+
+@pytest.mark.asyncio
+async def test_download_gallery_passes_netscape_cookiefile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("COOKIES_DIR", str(tmp_path))
+    from backend.skills.cookies import CookieJar
+
+    jar = CookieJar(root=tmp_path)
+    jar.save_storage_state(
+        "bili",
+        {
+            "cookies": [
+                {"name": "DedeUserID", "value": "1", "domain": ".bilibili.com", "path": "/"},
+                {"name": "SESSDATA", "value": "s", "domain": ".bilibili.com", "path": "/"},
+            ],
+            "origins": [],
+        },
+    )
+    seen: dict[str, Path | None] = {}
+
+    async def backend(url: str, **kwargs) -> DownloadGalleryOutput:
+        seen["cookiefile"] = kwargs.get("cookiefile")
+        return DownloadGalleryOutput(url=url, files=[])
+
+    result = await download_gallery(
+        "https://www.bilibili.com/album/1",
+        backend=backend,
+        resolver=lambda *_a, **_k: [(2, 1, 6, "", ("93.184.216.34", 443))],
+    )
+    assert result.error is None
+    assert seen["cookiefile"] == jar.netscape_path("bili")
+    assert seen["cookiefile"].is_file()

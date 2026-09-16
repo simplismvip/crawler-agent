@@ -6,9 +6,10 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 
 from backend.skills.base import SkillContext
+from backend.skills.cookies import CookieJar, has_login_sentinels
 from backend.skills.models import ScrapeSocialInput, ScrapeSocialOutput
 from backend.skills.safety import SafetyError, validate_fetch_url
-from backend.skills.scraper import apply_length_limit
+from backend.skills.scraper import apply_length_limit, truncation_task_warning
 
 PLATFORMS = ("xhs", "bili", "dy", "wb")
 
@@ -49,9 +50,12 @@ def infer_platform(url: str, explicit: str | None) -> str | None:
 
 
 def cookie_path_for(platform: str) -> Path | None:
-    directory = Path(os.environ.get("SOCIAL_COOKIES_DIR") or "data/cookies")
-    path = directory / f"{platform}.json"
-    return path if path.is_file() else None
+    jar = CookieJar()
+    state = jar.load_storage_state(platform)
+    cookies = list((state or {}).get("cookies") or [])
+    if not has_login_sentinels(platform, cookies):
+        return None
+    return jar.storage_path(platform)
 
 
 async def scrape_social(
@@ -77,13 +81,16 @@ async def scrape_social(
         return ScrapeSocialOutput(
             url=url,
             platform=resolved,
-            error="当前不能带登录态抓取。请将 Cookie 放到 data/cookies/{platform}.json 或设置 SOCIAL_COOKIES_DIR。",
+            error="当前不能带登录态抓取。请运行 python -m tools.login --platform {platform}，或将 storage_state 放到 data/cookies/{platform}.json。".format(
+                platform=resolved
+            ),
         )
     result = await worker.scrape(url, resolved, cookie)
     if result.markdown:
         markdown, truncated = apply_length_limit(result.markdown)
         result.markdown = markdown
         result.truncated = truncated
+        result.warning = truncation_task_warning(truncated)
     return result
 
 
@@ -98,6 +105,7 @@ class SocialSkill:
     routing = (
         "小红书/抖音/微博/B 站内容页且 scrape_social 可用时用它，"
         "不要用静态抓取去撞登录墙。"
+        "无登录态时说明运行 python -m tools.login --platform xhs，禁止改调 scrape_rendered。"
     )
 
     def __init__(self, adapter: SocialAdapter | None = None) -> None:
