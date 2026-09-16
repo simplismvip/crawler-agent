@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from pydantic import BaseModel
 
 from backend.skills.base import SkillContext
@@ -65,6 +66,10 @@ def test_system_prompt_includes_hint_rule_and_enabled_routing() -> None:
     assert "截断" in prompt
     assert "不限网站" in prompt
     assert "不是没登录" in prompt
+    assert "HTML 首页" in prompt
+    assert "xsec_token" in prompt
+    assert "user/profile" in prompt
+    assert "禁止声称不支持" in prompt
     collect = next(
         item for item in default_registry.openai_tools() if item["function"]["name"] == "collect_dataset"
     )
@@ -101,7 +106,9 @@ def test_skill_infos_include_install_hints_for_extras() -> None:
 
 
 
-def test_skill_infos_include_install_hints_for_missing_extras() -> None:
+def test_skill_infos_include_install_hints_for_missing_extras(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MEDIACRAWLER_HOME", raising=False)
+    monkeypatch.setattr("backend.skills.social.mediacrawler_home", lambda: None)
     infos = {item.name: item for item in default_registry.skill_infos()}
     assert infos["search_web"].available is True
     rendered = infos["scrape_rendered"]

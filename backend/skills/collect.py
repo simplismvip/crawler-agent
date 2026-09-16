@@ -393,6 +393,7 @@ class CollectSkill:
         "用户要保存/导出/全部 N 条结构化数据，或抓取结果 truncated/warning 时用 collect_dataset。"
         "针对任务体量，不限网站，不是知乎专用。"
         "禁止用 scrape_page 把列表全文贴进聊天。"
+        "不要用 collect_dataset 去抓小红书/社交 HTML 首页；scrape_social 失败不要改调本工具。"
         "成功后用返回的 path 告诉用户文件在哪。"
     )
 

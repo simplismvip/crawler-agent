@@ -8,6 +8,7 @@ from backend.skills.cookies import (
     detect_login_wall,
     has_login_sentinels,
     infer_platform,
+    is_logged_in,
 )
 
 
@@ -20,10 +21,23 @@ def test_infer_platform_from_host() -> None:
     assert infer_platform("https://example.com/") is None
 
 
-def test_xhs_sentinel_accepts_web_session_or_a1() -> None:
+def test_xhs_sentinel_requires_web_session_not_guest_a1() -> None:
     assert has_login_sentinels("xhs", [{"name": "web_session", "value": "x"}])
-    assert has_login_sentinels("xhs", [{"name": "a1", "value": "y"}])
+    assert not has_login_sentinels("xhs", [{"name": "a1", "value": "y"}])
     assert not has_login_sentinels("xhs", [{"name": "guest", "value": "1"}])
+    assert not has_login_sentinels("xhs", [{"name": "web_session", "value": ""}])
+    assert not has_login_sentinels("xhs", [{"name": "web_session", "value": "   "}])
+    assert has_login_sentinels(
+        "xhs",
+        [{"name": "a1", "value": "y"}, {"name": "web_session", "value": "x"}],
+    )
+    guest_state = {
+        "cookies": [{"name": "web_session", "value": "0300guest", "domain": ".xiaohongshu.com", "path": "/"}],
+        "origins": [],
+    }
+    assert not is_logged_in("xhs", guest_state)
+    guest_state["verified_login"] = True
+    assert is_logged_in("xhs", guest_state)
 
 
 def test_bili_sentinel_requires_both_keys() -> None:

@@ -22,6 +22,7 @@ def test_try_export_writes_storage_state(tmp_path: Path) -> None:
         [{"name": "web_session", "value": "ok", "domain": ".xiaohongshu.com", "path": "/"}],
         [],
         jar,
+        verified_login=True,
     )
     assert path.is_file()
     assert "web_session" in path.read_text(encoding="utf-8")
@@ -35,6 +36,7 @@ def test_try_export_does_not_overwrite_valid_file_on_guest(tmp_path: Path) -> No
         [{"name": "web_session", "value": "keep-me", "domain": ".xiaohongshu.com", "path": "/"}],
         [],
         jar,
+        verified_login=True,
     )
     original = (tmp_path / "xhs.json").read_text(encoding="utf-8")
     with pytest.raises(ValueError):
@@ -50,7 +52,7 @@ def test_poll_cookies_waits_until_sentinel() -> None:
         calls["n"] += 1
         if calls["n"] < 3:
             return [{"name": "guest", "value": "1"}]
-        return [{"name": "a1", "value": "ok"}]
+        return [{"name": "web_session", "value": "ok"}]
 
     sleeps: list[float] = []
     result = poll_cookies(
@@ -62,5 +64,27 @@ def test_poll_cookies_waits_until_sentinel() -> None:
         sleeper=sleeps.append,
     )
     assert result is not None
-    assert any(item["name"] == "a1" for item in result)
+    assert any(item["name"] == "web_session" for item in result)
     assert sleeps
+
+
+def test_try_export_rejects_unverified_xhs_guest_session(tmp_path: Path) -> None:
+    jar = CookieJar(root=tmp_path)
+    with pytest.raises(ValueError):
+        try_export(
+            "xhs",
+            [{"name": "web_session", "value": "guest-session", "domain": ".xiaohongshu.com", "path": "/"}],
+            [],
+            jar,
+            verified_login=False,
+        )
+    assert not (tmp_path / "xhs.json").exists()
+
+
+def test_poll_cookies_detects_xhs_session_change() -> None:
+    from backend.skills.cookies import xhs_session_changed
+
+    before = "guest-aaaa"
+    assert not xhs_session_changed(before, [{"name": "web_session", "value": "guest-aaaa"}])
+    assert xhs_session_changed(before, [{"name": "web_session", "value": "user-bbbb"}])
+    assert not xhs_session_changed("", [{"name": "web_session", "value": "guest-aaaa"}])

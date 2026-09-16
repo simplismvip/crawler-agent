@@ -21,7 +21,7 @@ _EXTRAS_META = {
     "media": ("yt-dlp", "uv pip install yt-dlp"),
     "gallery": ("gallery-dl", "uv pip install gallery-dl"),
     "http-stealth": ("curl_cffi", "uv pip install curl_cffi"),
-    "social": (None, None),
+    "social": (None, "git clone https://github.com/NanmiCoder/MediaCrawler && 设置 MEDIACRAWLER_HOME"),
 }
 
 

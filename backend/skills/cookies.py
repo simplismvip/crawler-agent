@@ -11,7 +11,7 @@ LOGIN_ERROR = "需要登录"
 
 # Any-of groups are inner tuples joined by AND across names; outer list is OR.
 PLATFORM_SENTINELS: dict[str, tuple[tuple[str, ...], ...]] = {
-    "xhs": (("web_session",), ("a1",)),
+    "xhs": (("web_session",),),
     "bili": (("DedeUserID", "SESSDATA"),),
     "zhihu": (("z_c0",),),
     "dy": (("sessionid",), ("sid_guard",)),
@@ -58,16 +58,43 @@ def infer_platform(url: str, explicit: str | None = None) -> str | None:
     return None
 
 
-def _cookie_names(cookies: list[dict[str, Any]]) -> set[str]:
-    return {str(item.get("name")) for item in cookies if item.get("name")}
+def _present_names(cookies: list[dict[str, Any]]) -> set[str]:
+    names: set[str] = set()
+    for item in cookies:
+        name = str(item.get("name") or "")
+        value = str(item.get("value") or "").strip()
+        if name and value:
+            names.add(name)
+    return names
+
+
+def cookie_value(cookies: list[dict[str, Any]], name: str) -> str:
+    for item in cookies:
+        if str(item.get("name") or "") == name:
+            return str(item.get("value") or "").strip()
+    return ""
+
+
+def xhs_session_changed(before: str, cookies: list[dict[str, Any]]) -> bool:
+    current = cookie_value(cookies, "web_session")
+    return bool(before) and bool(current) and current != before
 
 
 def has_login_sentinels(platform: str, cookies: list[dict[str, Any]]) -> bool:
     groups = PLATFORM_SENTINELS.get(platform)
     if not groups:
         return False
-    names = _cookie_names(cookies)
+    names = _present_names(cookies)
     return any(all(key in names for key in group) for group in groups)
+
+
+def is_logged_in(platform: str, state: dict[str, Any] | None) -> bool:
+    if not state:
+        return False
+    cookies = list(state.get("cookies") or [])
+    if platform == "xhs":
+        return bool(state.get("verified_login")) and has_login_sentinels(platform, cookies)
+    return has_login_sentinels(platform, cookies)
 
 
 def cookies_json_to_netscape(cookies: list[dict[str, Any]]) -> str:
@@ -137,10 +164,18 @@ class CookieJar:
 
     def save_storage_state(self, platform: str, state: dict[str, Any]) -> Path:
         cookies = list(state.get("cookies") or [])
-        if not has_login_sentinels(platform, cookies):
+        verified = bool(state.get("verified_login"))
+        if platform == "xhs":
+            if not (verified and has_login_sentinels(platform, cookies)):
+                raise ValueError("未检测到有效登录特征，拒绝写出游客 Cookie")
+        elif not has_login_sentinels(platform, cookies):
             raise ValueError("未检测到有效登录特征，拒绝写出游客 Cookie")
         self.root.mkdir(parents=True, exist_ok=True)
-        payload = {"cookies": cookies, "origins": list(state.get("origins") or [])}
+        payload = {
+            "cookies": cookies,
+            "origins": list(state.get("origins") or []),
+            "verified_login": True,
+        }
         path = self.storage_path(platform)
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         self.netscape_path(platform).write_text(cookies_json_to_netscape(cookies), encoding="utf-8")
@@ -157,16 +192,15 @@ class CookieJar:
         if not platform:
             return None
         state = self.load_storage_state(platform)
-        cookies = list((state or {}).get("cookies") or [])
-        if not has_login_sentinels(platform, cookies):
+        if not is_logged_in(platform, state):
             return None
         return state
 
     def ensure_netscape(self, platform: str) -> Path | None:
         state = self.load_storage_state(platform)
-        cookies = list((state or {}).get("cookies") or [])
-        if not has_login_sentinels(platform, cookies):
+        if not is_logged_in(platform, state):
             return None
+        cookies = list((state or {}).get("cookies") or [])
         path = self.netscape_path(platform)
         if not path.is_file():
             self.root.mkdir(parents=True, exist_ok=True)
@@ -180,11 +214,12 @@ class CookieJar:
         seen: set[str] = set()
         if platform:
             state = self.load_storage_state(platform)
-            for item in (state or {}).get("cookies") or []:
-                name = str(item.get("name") or "")
-                if name and name not in seen and _host_matches(str(item.get("domain") or ""), host):
-                    collected.append(item)
-                    seen.add(name)
+            if is_logged_in(platform, state):
+                for item in (state or {}).get("cookies") or []:
+                    name = str(item.get("name") or "")
+                    if name and name not in seen and _host_matches(str(item.get("domain") or ""), host):
+                        collected.append(item)
+                        seen.add(name)
         for path in sorted(self.root.glob("*.json")) if self.root.is_dir() else []:
             if platform and path.name == f"{platform}.json":
                 continue
@@ -208,8 +243,7 @@ class CookieJar:
         rows = []
         for platform in PLATFORM_SENTINELS:
             state = self.load_storage_state(platform)
-            cookies = list((state or {}).get("cookies") or [])
-            rows.append({"platform": platform, "configured": has_login_sentinels(platform, cookies)})
+            rows.append({"platform": platform, "configured": is_logged_in(platform, state)})
         return rows
 
 
