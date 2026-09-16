@@ -37,3 +37,25 @@ def test_allows_public_http_url() -> None:
         return [(2, 1, 6, "", ("93.184.216.34", 80))]
 
     assert validate_fetch_url("https://example.com/page", resolver=resolver) == "https://example.com/page"
+
+
+def test_skips_poisoned_ipv6_if_public_ipv4_exists() -> None:
+    from backend.skills.safety import resolve_fetch_url
+
+    def resolver(_host: str, *_args, **_kwargs):
+        return [
+            (10, 1, 6, "", ("2001::1", 443, 0, 0)),
+            (2, 1, 6, "", ("142.250.1.1", 443)),
+        ]
+
+    target = resolve_fetch_url("https://youtube.com/watch", resolver=resolver)
+    assert target.ip == "142.250.1.1"
+
+
+def test_rejects_when_all_resolved_ips_are_blocked() -> None:
+    def resolver(_host: str, *_args, **_kwargs):
+        return [(10, 1, 6, "", ("2001::1", 443, 0, 0))]
+
+    with pytest.raises(SafetyError, match="resolved ip not allowed"):
+        validate_fetch_url("https://youtube.com/watch", resolver=resolver)
+

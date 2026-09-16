@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import Callable
 from html.parser import HTMLParser
@@ -11,7 +12,9 @@ import httpx
 from bs4 import BeautifulSoup
 from markdownify import markdownify as to_markdown
 
-from backend.skills.models import ScrapePageOutput
+from backend.skills.base import SkillContext
+from backend.skills.http_fetch import pinned_getaddrinfo
+from backend.skills.models import ScrapePageInput, ScrapePageOutput
 from backend.skills.safety import (
     FETCH_TIMEOUT_SECONDS,
     MAX_DOWNLOAD_BYTES,
@@ -19,6 +22,7 @@ from backend.skills.safety import (
     MIN_HOST_INTERVAL_SECONDS,
     USER_AGENT,
     SafetyError,
+    resolve_fetch_url,
     validate_fetch_url,
 )
 
@@ -26,6 +30,7 @@ CHAR_LIMIT = 12_000
 SHORT_TEXT_CHARS = 200
 
 _fetch_lock = asyncio.Lock()
+_pin_lock = asyncio.Lock()
 _last_host_at: dict[str, float] = {}
 
 
@@ -72,14 +77,6 @@ def _markdownify_body(html: str) -> str:
     return (markdown or "").strip()
 
 
-def _looks_like_js_shell(html: str, markdown: str) -> bool:
-    if len(markdown) >= SHORT_TEXT_CHARS:
-        return False
-    soup = BeautifulSoup(html, "html.parser")
-    links = soup.find_all("a", href=True)
-    return len(links) < 3
-
-
 def html_to_markdown(html: str) -> tuple[str, str]:
     extracted = ""
     try:
@@ -104,6 +101,12 @@ def html_to_markdown(html: str) -> tuple[str, str]:
     if fallback:
         return fallback, "markdownify"
     return extracted, "trafilatura"
+
+
+def _rendered_hint() -> str | None:
+    from backend.skills.registry import default_registry
+
+    return "scrape_rendered" if default_registry.get("scrape_rendered") else None
 
 
 async def _respect_host_interval(host: str) -> None:
@@ -132,8 +135,8 @@ async def scrape_page(
     client: httpx.AsyncClient | None = None,
     cancel_event: asyncio.Event | None = None,
     resolver: Callable[..., Any] | None = None,
-    allow_browser: bool = True,
     rate_limit: bool = True,
+    empty_hint: str | None = None,
 ) -> ScrapePageOutput:
     try:
         kwargs = {} if resolver is None else {"resolver": resolver}
@@ -161,27 +164,35 @@ async def scrape_page(
                 async with _fetch_lock:
                     await _respect_host_interval(host)
             try:
-                async with client.stream("GET", current) as response:
-                    if response.is_redirect:
-                        location = response.headers.get("location")
-                        if not location:
-                            return ScrapePageOutput(url=current, error="redirect without location")
-                        nxt = urljoin(str(response.url), location)
-                        try:
-                            validate_fetch_url(nxt, **kwargs)
-                        except SafetyError as exc:
-                            return ScrapePageOutput(url=current, error=f"redirect blocked: {exc}")
-                        current = nxt
-                        continue
-                    if response.status_code >= 400:
-                        return ScrapePageOutput(
-                            url=str(response.url),
-                            error=f"HTTP {response.status_code}",
-                        )
-                    raw = await _read_limited(response)
-                    html = raw.decode(response.encoding or "utf-8", errors="replace")
-                    final_url = str(response.url)
-                    break
+                target = resolve_fetch_url(current, **kwargs)
+            except SafetyError as exc:
+                return ScrapePageOutput(url=current, error=str(exc))
+            try:
+                pin_lock = _pin_lock if owns_client else contextlib.nullcontext()
+                pin_dns = pinned_getaddrinfo(target) if owns_client else contextlib.nullcontext()
+                async with pin_lock:
+                    with pin_dns:
+                        async with client.stream("GET", current) as response:
+                            if response.is_redirect:
+                                location = response.headers.get("location")
+                                if not location:
+                                    return ScrapePageOutput(url=current, error="redirect without location")
+                                nxt = urljoin(str(response.url), location)
+                                try:
+                                    validate_fetch_url(nxt, **kwargs)
+                                except SafetyError as exc:
+                                    return ScrapePageOutput(url=current, error=f"redirect blocked: {exc}")
+                                current = nxt
+                                continue
+                            if response.status_code >= 400:
+                                return ScrapePageOutput(
+                                    url=str(response.url),
+                                    error=f"HTTP {response.status_code}",
+                                )
+                            raw = await _read_limited(response)
+                            html = raw.decode(response.encoding or "utf-8", errors="replace")
+                            final_url = str(response.url)
+                            break
             except httpx.TimeoutException:
                 return ScrapePageOutput(url=current, error="timeout")
             except httpx.RequestError as exc:
@@ -193,37 +204,33 @@ async def scrape_page(
             await client.aclose()
 
     markdown, _method = html_to_markdown(html)
-    if allow_browser and _looks_like_js_shell(html, markdown):
-        rendered = await _render_with_playwright(final_url, cancel_event)
-        if rendered:
-            html = rendered
-            markdown, _method = html_to_markdown(html)
 
     markdown, truncated = apply_length_limit(markdown)
     title = _page_title(html)
     if not markdown:
+        hint = empty_hint if empty_hint is not None else _rendered_hint()
         return ScrapePageOutput(
             url=final_url,
             title=title,
             error="empty content: 页面几乎没有可读正文。常见原因是需要登录、内容由脚本渲染，或站点拦截了抓取。当前版本不支持登录态抓取。",
+            hint=hint,
         )
     return ScrapePageOutput(url=final_url, title=title, markdown=markdown, truncated=truncated)
 
 
-async def _render_with_playwright(url: str, cancel_event: asyncio.Event | None) -> str | None:
-    try:
-        from playwright.async_api import async_playwright
-    except ImportError:
-        return None
+class ScrapePageSkill:
+    name = "scrape_page"
+    description = "Fetch a public http(s) page and extract main content as Markdown. Use this for ordinary articles, docs, and list pages. Do not use it first for video download or image galleries."
+    input_model = ScrapePageInput
+    extras = None
+    routing = "普通公开网页用 scrape_page。不要未试静态抓取就改用渲染类工具。"
 
-    if cancel_event is not None and cancel_event.is_set():
-        raise asyncio.CancelledError()
+    def available(self) -> bool:
+        return True
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        try:
-            page = await browser.new_page(user_agent=USER_AGENT)
-            await page.goto(url, wait_until="domcontentloaded", timeout=int(FETCH_TIMEOUT_SECONDS * 1000))
-            return await page.content()
-        finally:
-            await browser.close()
+    async def run(self, args: dict[str, Any], context: SkillContext) -> ScrapePageOutput:
+        return await scrape_page(
+            args["url"],
+            cancel_event=context.cancel_event,
+            empty_hint=_rendered_hint(),
+        )

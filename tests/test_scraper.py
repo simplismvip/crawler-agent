@@ -85,9 +85,36 @@ async def test_scrape_empty_shell_explains_login_or_js_wall() -> None:
             "https://example.com/app",
             client=client,
             resolver=lambda *_a, **_k: [(2, 1, 6, "", ("93.184.216.34", 443))],
-            allow_browser=False,
             rate_limit=False,
         )
     assert result.error
     assert "登录" in result.error
+    assert not result.markdown
+    from backend.skills.registry import default_registry
+
+    if default_registry.get("scrape_rendered"):
+        assert result.hint == "scrape_rendered"
+    else:
+        assert result.hint is None
+
+
+@pytest.mark.asyncio
+async def test_scrape_empty_shell_hints_rendered_when_provided() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text="<html><head><title>App</title></head><body><div id='app'></div></body></html>",
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await scrape_page(
+            "https://example.com/app",
+            client=client,
+            resolver=lambda *_a, **_k: [(2, 1, 6, "", ("93.184.216.34", 443))],
+            rate_limit=False,
+            empty_hint="scrape_rendered",
+        )
+    assert result.error
+    assert result.hint == "scrape_rendered"
     assert not result.markdown

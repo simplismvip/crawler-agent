@@ -1,0 +1,11 @@
+# extras.rendered — JS 页 scrape_rendered
+crawl4ai>=0.6
+
+# extras.media — download_media
+yt-dlp>=2025.1
+
+# extras.gallery — download_gallery
+gallery-dl>=1.27
+
+# extras.http-stealth — scrape_page 可选 HTTP 客户端（对模型不可见）
+curl_cffi>=0.7

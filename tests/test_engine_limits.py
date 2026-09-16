@@ -5,8 +5,9 @@ import asyncio
 import pytest
 from pydantic import BaseModel
 
-from backend.agent.engine import run_agent
+from backend.agent.engine import _content_for_llm, _fatal_llm_message, _preview_from_output, run_agent
 from backend.agent.llm import ScriptedLLM, StreamPart
+from backend.skills.models import ScrapePageOutput
 
 
 class DummyOut(BaseModel):
@@ -122,3 +123,56 @@ async def test_cancel_event_stops_in_flight_tool() -> None:
     cancel.set()
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=2)
+
+
+@pytest.mark.asyncio
+async def test_unknown_skill_emits_tool_end_error_without_running() -> None:
+    llm = ScriptedLLM(
+        rounds=[
+            [
+                StreamPart(
+                    tool_index=0,
+                    tool_id="ghost",
+                    tool_name="not_a_skill",
+                    arguments_delta='{"url": "https://example.com"}',
+                )
+            ],
+            [StreamPart(text="ok")],
+        ]
+    )
+    ran = False
+
+    async def runner(*_args):
+        nonlocal ran
+        ran = True
+        raise AssertionError("unknown skill must not execute")
+
+    events = [
+        event
+        async for event in run_agent("x", llm=llm, tool_runner=runner, request_id="req")
+    ]
+    assert ran is False
+    ends = [event for event in events if event.event == "tool_end"]
+    assert ends[0].status == "error"
+    assert ends[0].error == "unknown skill"
+    assert "tool_start" not in [event.event for event in events]
+    assert events[-1].status == "complete"
+
+
+def test_preview_omits_hint_but_llm_payload_keeps_it() -> None:
+    output = ScrapePageOutput(
+        url="https://example.com",
+        error="empty content: 页面几乎没有可读正文。",
+        hint="scrape_rendered",
+    )
+    preview, error = _preview_from_output(output)
+    assert error
+    assert "scrape_rendered" not in preview
+    payload = _content_for_llm(output)
+    assert "scrape_rendered" in payload
+
+
+def test_fatal_llm_message_maps_connection_error() -> None:
+    assert _fatal_llm_message(Exception("Connection error.")) == "模型服务暂时连不上，请再试一次。"
+    assert _fatal_llm_message(Exception("rate limited")) == "rate limited"
+

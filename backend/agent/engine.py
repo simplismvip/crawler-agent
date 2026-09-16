@@ -10,7 +10,6 @@ from pydantic import BaseModel, ValidationError
 
 from backend.agent.llm import StreamPart
 from backend.agent.openai_stream import OpenAIStreamer
-from backend.agent.prompt import SYSTEM_PROMPT
 from backend.agent.schema import (
     AgentEvent,
     DoneEvent,
@@ -19,12 +18,25 @@ from backend.agent.schema import (
     ToolStartEvent,
     TokenEvent,
 )
-from backend.skills import TOOL_HANDLERS, openai_tools
-from backend.skills.models import ScrapePageInput, SearchWebInput
+from backend.skills.base import SkillContext
+from backend.skills.registry import SkillErrorOutput, default_registry, openai_tools
 
 PREVIEW_LIMIT = 800
 LLM_MARKDOWN_LIMIT = 9000
-ToolRunner = Callable[[str, dict[str, Any], asyncio.Event | None], Awaitable[BaseModel]]
+ToolRunner = Callable[[str, dict[str, Any], SkillContext], Awaitable[BaseModel]]
+
+
+def _fatal_llm_message(exc: BaseException) -> str:
+    text = str(exc) or type(exc).__name__
+    name = type(exc).__name__
+    if "connection error" in text.lower() or name in {
+        "APIConnectionError",
+        "APITimeoutError",
+        "ConnectError",
+        "ConnectTimeout",
+    }:
+        return "模型服务暂时连不上，请再试一次。"
+    return text
 
 
 class AccumulatedCall:
@@ -36,13 +48,19 @@ class AccumulatedCall:
 
 def _preview_from_output(output: BaseModel) -> tuple[str, str | None]:
     data = output.model_dump()
+    data.pop("hint", None)
     error = data.get("error")
     if error:
         return str(error)[:PREVIEW_LIMIT], str(error)
+    files = data.get("files")
+    if isinstance(files, list):
+        title = data.get("title") or data.get("url") or ""
+        preview = f"{title} · {len(files)} 个文件"
+        return preview[:PREVIEW_LIMIT], None
     markdown = data.get("markdown")
     if isinstance(markdown, str) and markdown:
         return markdown[:PREVIEW_LIMIT], None
-    dumped = output.model_dump_json()
+    dumped = json.dumps(data, ensure_ascii=False)
     return dumped[:PREVIEW_LIMIT], None
 
 
@@ -56,35 +74,33 @@ def _content_for_llm(output: BaseModel) -> str:
 
 
 def _validate_args(name: str, raw: dict[str, Any]) -> dict[str, Any]:
-    if name == "search_web":
-        return SearchWebInput.model_validate(raw).model_dump()
-    if name == "scrape_page":
-        return ScrapePageInput.model_validate(raw).model_dump()
-    return raw
+    skill = default_registry.get(name)
+    if skill is None:
+        raise KeyError("unknown skill")
+    return skill.input_model.model_validate(raw).model_dump()
 
 
 async def default_tool_runner(
     name: str,
     args: dict[str, Any],
-    cancel_event: asyncio.Event | None,
+    context: SkillContext,
 ) -> BaseModel:
-    handler = TOOL_HANDLERS[name]
-    if name == "scrape_page":
-        return await handler(args["url"], cancel_event=cancel_event)
-    if name == "search_web":
-        return await handler(args["query"], args.get("max_results", 3))
-    raise KeyError(name)
+    skill = default_registry.get(name)
+    if skill is None:
+        return SkillErrorOutput(error="unknown skill")
+    return await skill.run(args, context)
 
 
 async def _run_tool(
     tool_runner: ToolRunner,
     name: str,
     args: dict[str, Any],
-    cancel_event: asyncio.Event | None,
+    context: SkillContext,
 ) -> BaseModel:
+    cancel_event = context.cancel_event
     if cancel_event is None:
-        return await tool_runner(name, args, None)
-    tool_task = asyncio.create_task(tool_runner(name, args, cancel_event))
+        return await tool_runner(name, args, context)
+    tool_task = asyncio.create_task(tool_runner(name, args, context))
     cancel_task = asyncio.create_task(cancel_event.wait())
     try:
         done, _pending = await asyncio.wait(
@@ -148,14 +164,15 @@ async def run_agent(
     llm: Any | None = None,
     tool_runner: ToolRunner | None = None,
     max_llm_rounds: int = 8,
-    max_tool_calls: int = 4,
+    max_tool_calls: int = 6,
     model: str | None = None,
 ) -> AsyncIterator[AgentEvent]:
     request_id = request_id or uuid.uuid4().hex
     llm = llm or OpenAIStreamer(model=model)
     tool_runner = tool_runner or default_tool_runner
+    context = SkillContext(request_id=request_id, cancel_event=cancel_event)
     tools = openai_tools()
-    messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": default_registry.build_system_prompt()}]
     for turn in history or []:
         role = turn.get("role")
         content = turn.get("content")
@@ -183,7 +200,9 @@ async def run_agent(
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                fatal_message = str(exc)
+                if cancel_event is not None and cancel_event.is_set():
+                    raise asyncio.CancelledError() from exc
+                fatal_message = _fatal_llm_message(exc)
                 yield ErrorEvent(request_id=request_id, message=fatal_message)
                 break
             for event in events:
@@ -220,7 +239,11 @@ async def run_agent(
                         parse_error = "tool arguments must be a JSON object"
                         parsed = None
                     elif quota_left:
-                        parsed = _validate_args(call.name, parsed)
+                        if default_registry.get(call.name) is None:
+                            parse_error = "unknown skill"
+                            parsed = None
+                        else:
+                            parsed = _validate_args(call.name, parsed)
                 except (json.JSONDecodeError, ValidationError, KeyError) as exc:
                     parse_error = str(exc)
                     parsed = None
@@ -266,16 +289,11 @@ async def run_agent(
 
                 yield ToolStartEvent(request_id=request_id, name=call.name, args=parsed)
                 try:
-                    output = await _run_tool(tool_runner, call.name, parsed, cancel_event)
+                    output = await _run_tool(tool_runner, call.name, parsed, context)
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    from backend.skills.models import ScrapePageOutput, SearchWebOutput
-
-                    if call.name == "search_web":
-                        output = SearchWebOutput(query=parsed.get("query", ""), error=str(exc))
-                    else:
-                        output = ScrapePageOutput(url=parsed.get("url", ""), error=str(exc))
+                    output = SkillErrorOutput(error=str(exc))
                 executed += 1
                 preview, error = _preview_from_output(output)
                 status = "error" if error else "ok"

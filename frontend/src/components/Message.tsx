@@ -4,7 +4,7 @@ import type { Components } from "react-markdown";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, ChevronDown, Copy, Globe, Link2 } from "lucide-react";
+import { Check, ChevronDown, Copy, Film, Globe, Images, Link2, Monitor, Share2, Wrench } from "lucide-react";
 import { Sparkle } from "@/components/Sparkle";
 import type { ToolCard } from "@/lib/api";
 
@@ -44,17 +44,20 @@ const markdownComponents: Components = {
   ),
 };
 
+const TOOL_UI: Record<string, { icon: typeof Globe; running: string; done: string }> = {
+  search_web: { icon: Globe, running: "正在搜索网页", done: "已搜索网页" },
+  scrape_page: { icon: Link2, running: "正在抓取页面", done: "已抓取页面" },
+  scrape_rendered: { icon: Monitor, running: "正在渲染页面", done: "已渲染页面" },
+  download_media: { icon: Film, running: "正在提取媒体", done: "已提取媒体" },
+  download_gallery: { icon: Images, running: "正在下载图集", done: "已下载图集" },
+  scrape_social: { icon: Share2, running: "正在抓取社交内容", done: "已抓取社交内容" },
+};
+
 export function ToolPanel({ tool }: { tool: ToolCard }) {
   const [open, setOpen] = useState(tool.status === "running" || tool.status === "error");
-  const Icon = tool.name === "search_web" ? Globe : Link2;
-  const label =
-    tool.name === "search_web"
-      ? tool.status === "running"
-        ? "正在搜索网页"
-        : "已搜索网页"
-      : tool.status === "running"
-        ? "正在抓取页面"
-        : "已抓取页面";
+  const ui = TOOL_UI[tool.name] ?? { icon: Wrench, running: `正在调用 ${tool.name}`, done: `已调用 ${tool.name}` };
+  const Icon = ui.icon;
+  const label = tool.status === "running" ? ui.running : ui.done;
   return (
     <div className="overflow-hidden rounded-2xl bg-[var(--gm-chip)] text-sm">
       <button
@@ -107,9 +110,8 @@ export function MessageBubble({
 
   return (
     <div className="flex gap-3">
-      <div className="relative mt-1 shrink-0">
-        {streaming ? <span className="absolute inset-[-6px] rounded-full bg-[#c158dc]/15 animate-ping" /> : null}
-        <Sparkle className={`relative h-7 w-7 ${streaming ? "gm-sparkle-busy" : ""}`} />
+      <div className="relative mt-1 h-7 w-7 shrink-0 self-start">
+        <Sparkle className={`h-7 w-7 ${streaming ? "gm-sparkle-busy" : ""}`} />
       </div>
       <div className="min-w-0 flex-1 space-y-3">
         {tools.map((tool, index) => (

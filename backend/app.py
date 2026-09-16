@@ -113,6 +113,13 @@ async def list_models() -> dict[str, Any]:
     return {"default": DEFAULT_MODEL, "models": [dict(item) for item in MODELS]}
 
 
+@app.get("/api/skills")
+async def list_skills() -> dict[str, Any]:
+    from backend.skills.registry import default_registry
+
+    return {"skills": [item.model_dump() for item in default_registry.skill_infos()]}
+
+
 @app.get("/api/conversations")
 async def list_conversations(request: Request, q: str | None = None) -> dict[str, Any]:
     _authorize(request)
@@ -228,16 +235,17 @@ async def chat(body: ChatRequest, request: Request) -> StreamingResponse:
 
         task = asyncio.create_task(produce())
         sent_done = False
-        got_event = False
+        agent_started = False
         last_ping = time.monotonic()
         try:
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=1.0)
                 except asyncio.TimeoutError:
-                    # Starlette reports POST streams as disconnected before the
-                    # first byte. Only probe after the agent has started emitting.
-                    if got_event and await request.is_disconnected():
+                    # Starlette often reports POST SSE as disconnected before any
+                    # body byte. conversation/ping do not count — otherwise a
+                    # slow MiniMax first token gets cancelled as "Connection error."
+                    if agent_started and await request.is_disconnected():
                         cancel_event.set()
                         break
                     if time.monotonic() - last_ping >= 15:
@@ -246,7 +254,8 @@ async def chat(body: ChatRequest, request: Request) -> StreamingResponse:
                     continue
                 if event is None:
                     break
-                got_event = True
+                if event.event not in {"conversation", "ping"}:
+                    agent_started = True
                 if event.event == "done":
                     sent_done = True
                 yield format_sse(event)

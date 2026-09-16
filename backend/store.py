@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
@@ -16,6 +17,21 @@ def _now() -> str:
 def _new_id() -> str:
     return uuid.uuid4().hex
 
+
+_TRANSIENT_ASSISTANT = re.compile(
+    r"^(下载失败[:：]\s*)?(connection error\.?|模型服务暂时连不上.*)$",
+    re.IGNORECASE | re.DOTALL,
+)
+_INCOMPLETE_REDOWNLOAD = re.compile(r"^好的[，,]?重新下载视频[:：]?\s*$")
+
+
+def _is_transient_error_content(content: str) -> bool:
+    text = content.strip()
+    if not text:
+        return False
+    if _TRANSIENT_ASSISTANT.fullmatch(text) or _INCOMPLETE_REDOWNLOAD.fullmatch(text):
+        return True
+    return text.startswith("模型服务暂时连不上") or text.startswith("请求失败")
 
 @dataclass
 class ToolCallRecord:
@@ -294,4 +310,23 @@ class ConversationStore:
         conversation = self.get_conversation(conversation_id)
         if conversation is None:
             return []
-        return [{"role": message.role, "content": message.content} for message in conversation.messages if message.content]
+        messages = [message for message in conversation.messages if message.content]
+        turns: list[dict[str, str]] = []
+        index = 0
+        while index < len(messages):
+            current = messages[index]
+            nxt = messages[index + 1] if index + 1 < len(messages) else None
+            if (
+                current.role == "user"
+                and nxt is not None
+                and nxt.role == "assistant"
+                and _is_transient_error_content(nxt.content)
+            ):
+                index += 2
+                continue
+            if current.role == "assistant" and _is_transient_error_content(current.content):
+                index += 1
+                continue
+            turns.append({"role": current.role, "content": current.content})
+            index += 1
+        return turns

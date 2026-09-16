@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 import httpx
 
 from backend.settings import settings
+from backend.skills.base import SkillContext
 from backend.skills.models import SearchHit, SearchWebInput, SearchWebOutput
 from backend.skills.safety import USER_AGENT
 
@@ -117,3 +118,18 @@ async def search_web(
 
 def parse_search_args(raw: dict) -> SearchWebInput:
     return SearchWebInput.model_validate(raw)
+
+
+class SearchWebSkill:
+    name = "search_web"
+    description = "Search the public web and return title/url/snippet hits."
+    input_model = SearchWebInput
+    extras = None
+    routing = "没有 URL 时先 search_web，再挑选 1 个最相关结果交给抓取工具；确有必要时最多再打开 1 个页面。"
+
+    def available(self) -> bool:
+        return True
+
+    async def run(self, args: dict, context: SkillContext) -> SearchWebOutput:
+        return await search_web(args["query"], args.get("max_results", 3))
+

@@ -50,3 +50,20 @@ def test_messages_and_tool_calls_roundtrip(tmp_path) -> None:
         {"role": "user", "content": "搜索 Fastify"},
         {"role": "assistant", "content": "这是总结"},
     ]
+
+
+def test_history_turns_drops_transient_connection_errors(tmp_path) -> None:
+    store = ConversationStore(tmp_path / "agent.db")
+    conv = store.create_conversation(model="MiniMax-M3")
+    store.add_message(conv.id, "user", "帮我下载 https://www.bilibili.com/video/BV1e61RYPEno")
+    store.add_message(conv.id, "assistant", "下载完成")
+    store.add_message(conv.id, "user", "重新下载")
+    store.add_message(conv.id, "assistant", "Connection error.")
+    store.add_message(conv.id, "user", "重新下载")
+    store.add_message(conv.id, "assistant", "下载失败：Connection error.")
+    store.add_message(conv.id, "user", "重新下载")
+    store.add_message(conv.id, "assistant", "好的，重新下载视频：")
+    assert store.history_turns(conv.id) == [
+        {"role": "user", "content": "帮我下载 https://www.bilibili.com/video/BV1e61RYPEno"},
+        {"role": "assistant", "content": "下载完成"},
+    ]
