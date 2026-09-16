@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.env
+*.pyc
+.DS_Store
+.next/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+.coverage
+htmlcov/

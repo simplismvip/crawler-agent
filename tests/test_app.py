@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+from backend.agent.schema import DoneEvent, TokenEvent
+from backend.app import app
+from fastapi.testclient import TestClient
+
+
+def test_health() -> None:
+    with TestClient(app) as client:
+        assert client.get("/api/health").json() == {"status": "ok"}
+
+
+def test_chat_sse_events(monkeypatch) -> None:
+    async def fake_run(*_args, **_kwargs):
+        yield TokenEvent(request_id="x", text="hi")
+        yield DoneEvent(request_id="x", status="complete")
+
+    monkeypatch.setattr("backend.app.run_agent", fake_run)
+    with TestClient(app) as client:
+        with client.stream("POST", "/api/chat", json={"message": "hello"}) as response:
+            assert response.status_code == 200
+            body = "".join(response.iter_text())
+    assert "event: token" in body
+    assert '"text":"hi"' in body or '"text": "hi"' in body
+    assert "event: done" in body
+
+
+def test_chat_sse_waits_past_one_second(monkeypatch) -> None:
+    async def slow_run(*_args, **_kwargs):
+        import asyncio
+
+        await asyncio.sleep(1.2)
+        yield TokenEvent(request_id="x", text="hi")
+        yield DoneEvent(request_id="x", status="complete")
+
+    monkeypatch.setattr("backend.app.run_agent", slow_run)
+    with TestClient(app) as client:
+        with client.stream("POST", "/api/chat", json={"message": "hello"}) as response:
+            body = "".join(response.iter_text())
+    assert "event: token" in body
+    assert '"status":"complete"' in body or '"status": "complete"' in body
+
