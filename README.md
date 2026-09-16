@@ -40,18 +40,14 @@ uv pip install --python .venv/bin/python -r backend/requirements-extras.txt
 不要给日常 Chrome 开远程调试。扫码用专用窗口：
 
 ```bash
-.venv/bin/python -m tools.login --platform xhs    # 或 bili / zhihu / dy / wb
+.venv/bin/python -m tools.login --platform <name>
 ```
 
-登录成功才写入 `data/cookies/`。小红书必须出现真正的 `web_session`（只有设备指纹 `a1` 不算登录）。Cookie 不会进对话。
+登录成功才写入 `data/cookies/`。Cookie 不会进对话。
 
-## 小红书 / 知乎问答等
+## MediaCrawler
 
-国内社交不要靠普通网页抓取。另外克隆 [MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)，在 `.env` 写上：
-
-```bash
-MEDIACRAWLER_HOME=/absolute/path/to/MediaCrawler
-```
+部分站点的内容页需要本机另装 [MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)，本仓库不内置。克隆后在 `.env` 写上绝对路径：
 
 ```bash
 git clone https://github.com/NanmiCoder/MediaCrawler.git ../MediaCrawler
@@ -59,12 +55,11 @@ cd ../MediaCrawler && uv sync
 .venv/bin/playwright install chromium-headless-shell
 ```
 
-然后把**完整链接**发给助手。小红书请用：
+```bash
+MEDIACRAWLER_HOME=/absolute/path/to/MediaCrawler
+```
 
-- 笔记：`/explore/{id}?xsec_token=...` 或带 token 的 `/discovery/item/...`
-- 作者主页：`/user/profile/{id}?xsec_token=...`（创作者接口有时比单条笔记更容易被拦）
-
-`/explore` 首页不够。不会接管你的日常 Chrome。
+平台代号见 MediaCrawler 文档。把**内容页的完整链接**发给助手即可（地址栏里复制，不要用频道首页）。适配器不会接管你的日常 Chrome。
 
 ## 列表太长
 
